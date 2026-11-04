@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { pairActions } from './pairActions'
 import { blocked, isFood } from './state'
 type Point = { x: number; y: number }
 type Attack = {
@@ -63,7 +64,11 @@ export function useWorldActors({
   onReaction,
   decor,
   onEat,
+  ownedActions = [],
+  pairRequest,
 }: {
+  ownedActions?: number[]
+  pairRequest?: { id: number; nonce: number } | null
   character: 'wolf' | 'fox'
   decor: Record<string, number>
   onEat: (key: string, kind: number, map: number) => void
@@ -89,6 +94,10 @@ export function useWorldActors({
     attack: null as Attack | null,
     protecting: false,
   })
+  const pending = useRef(pairRequest)
+  const collection = useRef(ownedActions)
+  useEffect(() => { collection.current = ownedActions }, [ownedActions])
+  useEffect(() => { pending.current = pairRequest }, [pairRequest])
   const simulation = useRef(actors)
   const current = useRef({ position, onMove, onReaction, decor, onEat })
   useEffect(() => {
@@ -132,6 +141,15 @@ export function useWorldActors({
       let idleAge = state.idleAge + 1
       const together =
         distance(player, companion) <= 1.5 && player.y === companion.y
+      if (idle.startsWith('pair-') && (moved || busy || idleAge >= pairActions[Number(idle.slice(5))].duration)) {
+        idle = 'rest'
+        idleAge = 0
+      }
+      if (pending.current && together && stillTicks >= 3 && !busy) {
+        idle = `pair-${pending.current.id}`
+        idleAge = 0
+        pending.current = null
+      }
       if (
         idle === 'head' &&
         ((character === 'fox' && moved) || (idleAge >= 8 && stillTicks >= 3))
@@ -142,9 +160,9 @@ export function useWorldActors({
         if (character === 'wolf') companion = followStep(player, player, map)
       }
       if (
-        idle !== 'head' &&
+        idle !== 'head' && !idle.startsWith('pair-') &&
         (idleAge > (idle === 'nap' ? 48 : idle === 'chase' ? 36 : 24) ||
-          ((moved || busy) && ['hug', 'drink', 'nap', 'chase'].includes(idle)))
+          ((moved || busy) && ['hug', 'lean', 'cuddle', 'drink', 'nap', 'chase'].includes(idle)))
       ) {
         idle = 'rest'
         idleAge = 0
@@ -152,7 +170,7 @@ export function useWorldActors({
       if (tick % 40 === 12 && idle === 'rest' && !busy) {
         const choices =
           together && stillTicks >= 3
-            ? ['head', 'hug', 'drink', 'nap', 'chase', 'rest']
+            ? ['head', 'hug', 'lean', 'cuddle', 'drink', 'nap', 'chase', ...collection.current.map((id) => `pair-${id}`), 'rest']
             : [character === 'wolf' ? 'hop' : 'sleep', 'rest']
         idle = choices[Math.floor(Math.random() * choices.length)]
         if (
@@ -278,7 +296,7 @@ export function useWorldActors({
           companion = next
         }
       } else if (
-        !['drink', 'hug', 'hop', 'sleep', 'nap', 'chase'].includes(idle)
+        !idle.startsWith('pair-') && !['drink', 'hug', 'lean', 'cuddle', 'hop', 'sleep', 'nap', 'chase'].includes(idle)
       ) {
         const next = followStep(companion, player, map)
         walking = distance(next, companion) > 0

@@ -67,6 +67,9 @@ const world = z.object({
 })
 export const saveSchema = z.object({
   version: z.literal(1),
+  // Additive v1 fields: old saves keep their progress and gain an empty collection.
+  pairActions: z.array(z.number().int().min(0).max(9)).max(10).default([]),
+  desertGuardDay: z.number().int().min(0).max(1000000).default(0),
   coins: z.number().int().min(0).max(10000000),
   xp: z.number().int().min(0).max(1000000),
   energy: z.number().int().min(0).max(100),
@@ -161,6 +164,8 @@ export const maps = [
 export function initialSave(): Save {
   return {
     version: 1,
+    pairActions: [],
+    desertGuardDay: 0,
     materials: Array(11).fill(0),
     fish: [0, 0, 0],
     equipment: { wolf: [0, 0, 0, 0, 0], fox: [0, 0, 0, 0, 0] },

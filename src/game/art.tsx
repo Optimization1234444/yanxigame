@@ -1,11 +1,9 @@
 export function Character({
   fox = false,
   walking = false,
-  embracing = false,
 }: {
   fox?: boolean
   walking?: boolean
-  embracing?: boolean
 }) {
   const fur = fox ? '#fff2d8' : '#303936'
   return (
@@ -15,7 +13,7 @@ export function Character({
       <ellipse cx="17" cy="30" rx="14" ry="3" fill="#3e513b" opacity=".18" />
       <g className="character-breath">
         <g className="character-stride">
-          <g className="tail" visibility={embracing ? 'hidden' : undefined}>
+          <g className="tail">
             <path d="M23 20h7v-5h5v12h-12z" fill={fur} />
             <path d="M30 15h5v6h-5z" fill={fox ? '#c28b64' : '#48504b'} />
           </g>
@@ -38,15 +36,6 @@ export function Character({
             <rect x="16" y="13" width="2" height="2" />
           </g>
           <path d="M11 17h3v2h-3z" fill={fox ? '#b07f73' : '#647468'} />
-          {embracing && (
-            <g className="tail-embrace" aria-label="晏咪用尾巴圈住奚咪">
-              <path
-                d="M23 20h9v5h5v10h-5v4H-10v-4h-6V23h7v9h39v-5h-7z"
-                fill={fur}
-              />
-              <path d="M-16 23h7v9h-7z" fill="#59635b" />
-            </g>
-          )}
         </g>
       </g>
     </g>

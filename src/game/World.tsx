@@ -19,10 +19,14 @@ import {
   Weapon,
 } from './scenery'
 import { landscape, materials, ponds, fishKinds } from './exploration'
+import { useMummy } from './useMummy'
+import { pairActions, pairPose } from './pairActions'
 import { useWorldActors } from './useWorldActors'
 import { blocked, crops, maps, type Save } from './state'
 export function World({
   save,
+  pairRequest,
+  onGuard,
   now,
   grid,
   onTile,
@@ -38,6 +42,8 @@ export function World({
   onFishCaught,
   onGather,
 }: {
+  pairRequest?: { id: number; nonce: number } | null
+  onGuard: () => void
   onGather: (id: string) => void
   onFishStart: () => boolean
   onFishCaught: (kind: number) => void
@@ -57,12 +63,19 @@ export function World({
   type Fishing = { x: number; y: number; map: number; ticks: number }
   const [fishing, setFishing] = useState<Fishing | null>(null)
   const [fishingNotice, setFishingNotice] = useState('点击池边小鱼开始钓鱼')
+  const [desertNotice, setDesertNotice] = useState('绕到绿洲另一侧，将木乃伊引入水中。')
+  useEffect(() => {
+    setDesertNotice('绕到绿洲另一侧，将木乃伊引入水中。')
+  }, [save.map])
+  const { mummy, guarding } = useMummy(save, position, paused, onMove, onGuard, setDesertNotice)
   const actors = useWorldActors({
+    ownedActions: save.pairActions,
+    pairRequest,
     position,
     character: save.character,
     map: save.map,
     paused,
-    busy: !!fishing,
+    busy: !!fishing || !!mummy,
     onMove,
     onReaction,
     decor: save.worlds[save.map].decor,
@@ -155,10 +168,29 @@ export function World({
     !blocked(position.x - side, position.y, save.map) &&
     !blocked(actors.companion.x + side, actors.companion.y, save.map)
   const riding = actors.idle === 'head' && !actors.attack && !actors.eating
-  const hugging = actors.idle === 'hug' && actors.close && !walking
+  const hugging = ['hug', 'lean', 'cuddle'].includes(actors.idle) && actors.close && !walking
   const napping = actors.idle === 'nap' && !walking && !actors.eating
   const chasing = actors.idle === 'chase' && !walking && !actors.eating
   const pairOffset = chasing ? actors.pairOffset : { x: 0, y: 0 }
+  const pairId = actors.idle.startsWith('pair-') ? Number(actors.idle.slice(5)) : -1
+  const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const pose = (fox: boolean) => {
+    if (pairId >= 0 && !reduced) {
+      const p = pairPose(pairId, actors.idleAge, fox)
+      const actorIsPlayer = fox === (save.character === 'fox')
+      const base = actorIsPlayer ? position : actors.companion
+      const other = actorIsPlayer ? actors.companion : position
+      if (pairId === 0 && p.y < -1) p.x = (other.x - base.x) * 16
+      // Keep ground-level choreography over walkable tiles.
+      if (blocked(Math.round(base.x + p.x / 16), base.y, save.map)) p.x = 0
+      // Choreography is staged above the two free standing tiles.
+      return `translate(${p.x} ${p.y}) rotate(${p.rotate} 17 24)`
+    }
+    const actorIsPlayer = fox === (save.character === 'fox')
+    const towards = actorIsPlayer ? side : -side
+    const settle = reduced ? 1 : Math.min(1, actors.idleAge / 5)
+    return hugging ? `translate(${towards * (actors.idle === 'cuddle' ? 4 : 3) * settle} ${actors.idle === 'lean' ? settle : 0}) rotate(${towards * (actors.idle === 'cuddle' ? 4 : 2) * settle} 17 27)` : undefined
+  }
   const foxPlayer = save.character === 'fox'
   const playerX =
     riding && foxPlayer
@@ -244,7 +276,8 @@ export function World({
       className="player"
     >
       <g
-        className={`actor-idle ${riding && foxPlayer ? 'actor-head-hop' : ''} ${kissing ? 'actor-kiss' : ''} ${napping ? 'idle-sleep' : chasing ? 'idle-chase' : ''}`}
+        className={`actor-idle ${hugging ? 'actor-affection' : ''} ${pairId >= 0 ? 'pair-performing' : ''} ${riding && foxPlayer ? 'actor-head-hop' : ''} ${kissing ? 'actor-kiss' : ''} ${napping ? 'idle-sleep' : chasing ? 'idle-chase' : ''}`}
+        transform={pose(foxPlayer)}
       >
         <g
           transform={
@@ -260,7 +293,6 @@ export function World({
           <Character
             fox={foxPlayer}
             walking={walking || chasing}
-            embracing={hugging && !foxPlayer}
           />
         </g>
       </g>
@@ -276,7 +308,8 @@ export function World({
       className={`companion ${riding && !foxPlayer ? 'player' : 'companion-moving'}`}
     >
       <g
-        className={`actor-idle ${riding && !foxPlayer ? 'actor-head-hop' : actors.eating ? 'actor-eating' : !actors.walking && !actors.attack ? `idle-${actors.idle}` : ''} ${kissing ? 'actor-kiss' : ''} ${napping ? 'idle-sleep' : chasing ? 'idle-chase' : ''}`}
+        className={`actor-idle ${hugging ? 'actor-affection' : ''} ${pairId >= 0 ? 'pair-performing' : ''} ${riding && !foxPlayer ? 'actor-head-hop' : actors.eating ? 'actor-eating' : !actors.walking && !actors.attack ? `idle-${actors.idle}` : ''} ${kissing ? 'actor-kiss' : ''} ${napping ? 'idle-sleep' : chasing ? 'idle-chase' : ''}`}
+        transform={pose(!foxPlayer)}
       >
         <g
           transform={
@@ -292,10 +325,10 @@ export function World({
           <Character
             fox={save.character !== 'fox'}
             walking={(actors.walking && !riding) || chasing}
-            embracing={hugging && foxPlayer}
           />
         </g>
       </g>
+      {guarding && <g pointerEvents="none"><path d="M-4-4h42v20c0 12-21 20-21 20S-4 28-4 16z" fill="#eed99a" fillOpacity=".35" stroke="#faedbd" strokeWidth="2" /><text x="17" y="-10" textAnchor="middle" fontSize="10" fill="#765d41">替你挡住！</text></g>}
       {!napping &&
         (companionSpeech ||
           actors.eating ||
@@ -929,6 +962,21 @@ export function World({
             </g>
           </g>
         ))}
+        {mummy && <g transform={`translate(${mummy.x * 16 - 10} ${mummy.y * 16 - 22})`} pointerEvents="none">
+          <title>追逐中的木乃伊 · 引到水里</title>
+          <ellipse cx="10" cy="24" rx="12" ry="4" fill="#635840" opacity=".3" />
+          <path d="M3 0h15v12H3zM1 12h19v15H1zM-5 13h6v6h-6zm25 0h6v6h-6z" fill="#ede0b6" stroke="#8a7752" strokeWidth="2" />
+          <path d="M3 4h15M3 10h15M1 17h19M1 23h19" stroke="#b8a477" strokeWidth="2" />
+          <path d="M5 6h4v3H5zm7 0h4v3h-4z" fill="#885349" />
+        </g>}
+        {pairId >= 0 && <g pointerEvents="none" transform={`translate(${position.x * 16} ${position.y * 16 - 44})`}>
+          <text textAnchor="middle" fontSize="10" fill="#604d42">{pairId === 3 ? actors.idleAge < 12 ? '奚咪：舔舔晏咪' : actors.idleAge < 28 ? '晏咪悄悄后退' : '晏咪：……亲一下。' : pairActions[pairId].name}</text>
+          {pairId === 3 && (actors.idleAge < 12 || actors.idleAge >= 28) && <path d="M-5-12c-8-7-12 4 5 12 17-8 13-19 5-12l-5 4z" fill="#ce8e83" />}
+          {pairId >= 7 && Array.from({ length: reduced ? 4 : 12 }, (_, i) => {
+            const a = i * Math.PI / 6 + (reduced ? 0 : actors.idleAge / 5)
+            return <path key={i} d="M-3 0h6M0-3v6" transform={`translate(${Math.cos(a) * (28 + i % 3 * 12)} ${Math.sin(a) * 24 - 15})`} stroke={i % 2 ? '#f6db8c' : '#ce8e83'} strokeWidth="2" />
+          })}
+        </g>}
         {grid && (
           <rect
             width="1024"
@@ -953,24 +1001,31 @@ export function World({
           />
         )}
       </svg>
-      <div className="map-fishing-status">
-        <span role="status">
-          {fishing
-            ? `钓鱼 ${fishing.ticks}/5 · ${paused ? '已暂停' : '等待浮漂…'}`
-            : fishingNotice}
-        </span>
-        {fishing && (
-          <button
-            disabled={paused}
-            onClick={() => {
-              fishingRef.current = null
-              setFishing(null)
-              setFishingNotice('已收竿')
-            }}
-          >
-            收竿
-          </button>
-        )}
+      <div className="map-fishing-status map-status-column">
+        {save.map === 4 && <div className="desert-notice" role="status">
+          <strong>{mummy ? '木乃伊正在追逐' : '沙丘暂时安静'}</strong>
+          <span>{desertNotice}</span>
+          <small>同伴守护 {save.desertGuardDay === save.day ? '0' : '1'}/1 · 每日恢复</small>
+        </div>}
+        <div className="fishing-status-row">
+          <span role="status">
+            {fishing
+              ? `钓鱼 ${fishing.ticks}/5 · ${paused ? '已暂停' : '等待浮漂…'}`
+              : fishingNotice}
+          </span>
+          {fishing && (
+            <button
+              disabled={paused}
+              onClick={() => {
+                fishingRef.current = null
+                setFishing(null)
+                setFishingNotice('已收竿')
+              }}
+            >
+              收竿
+            </button>
+          )}
+        </div>
       </div>
     </>
   )
