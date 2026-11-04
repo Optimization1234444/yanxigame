@@ -2,6 +2,7 @@ import { TouchControls } from '../game/TouchControls'
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import {
+  ArrowLeft,
   ArrowDownToLine,
   ArrowUpFromLine,
   Check,
@@ -38,6 +39,7 @@ import { Character, Animal, Plant, Decoration } from '@/game/art'
 import { Meadow, Weapon } from '@/game/scenery'
 import { ExplorationPanel, WildHarvest } from '@/game/ExplorationPanel'
 import { Cabin } from '@/game/Cabin'
+import { pairActions } from '@/game/pairActions'
 import { World } from '@/game/World'
 import { fishKinds, landscape, materials } from '@/game/exploration'
 import {
@@ -71,7 +73,7 @@ const companionLines = {
     '晏咪晏咪，快看！这颗草莓要留给你！',
     '给晏咪发出爱心邀请！一起回小木屋休息吧~',
     '嘿嘿，晏咪话不多，可是一直都在照顾我呢！',
-    '今天轮到你浇地了，我负责给晏咪加油！',
+    '和晏咪一起，慢慢过今天。',
   ],
 }
 function companionLine(character: Save['character']) {
@@ -120,8 +122,9 @@ function Home() {
   const [roomSlot, setRoomSlot] = useState(0)
   const [tab, setTab] = useState('种子')
   const [modal, setModal] = useState<
-    'settings' | 'shop' | 'house' | 'help' | null
+    'settings' | 'shop' | 'actions' | 'house' | 'help' | null
   >(null)
+  const [pairRequest, setPairRequest] = useState<{ id: number; nonce: number } | null>(null)
   const [now, setNow] = useState(Date.now())
   const [grid, setGrid] = useState(false)
   const [paused, setPaused] = useState(false)
@@ -141,7 +144,7 @@ function Home() {
       `你买了${item}吗？${endings[Math.floor(Math.random() * endings.length)]}`,
     )
   }
-  const [message, setMessage] = useState('今天轮到你浇地了。')
+  const [message, setMessage] = useState('')
   const [code, setCode] = useState('')
   const [codeMessage, setCodeMessage] = useState('')
   const [saved, setSaved] = useState(true)
@@ -852,6 +855,8 @@ function Home() {
               <div className="world-wrap">
                 <World
                   save={save}
+                  pairRequest={pairRequest}
+                  onGuard={() => setSave((s) => ({ ...s, desertGuardDay: s.day }))}
                   now={now}
                   grid={grid}
                   onTile={tile}
@@ -1194,7 +1199,6 @@ function Home() {
             <section className="quote-card">
               <Flower2 size={25} strokeWidth={1.3} />
               <p>一起经营晏与奚的猫咪生活吧</p>
-              <span>今天轮到你浇地了</span>
               <div className="quote-flowers">✧　·　✧</div>
             </section>
           </aside>
@@ -1221,7 +1225,9 @@ function Home() {
           <DialogTitle>
             {modal === 'settings'
               ? '把小日子好好收藏'
-              : modal === 'shop'
+              : modal === 'actions'
+                ? '动作商店'
+                : modal === 'shop'
                 ? '林间杂货铺'
                 : modal === 'house'
                   ? '欢迎回到小木屋'
@@ -1230,7 +1236,9 @@ function Home() {
           <DialogDescription>
             {modal === 'settings'
               ? '导出储存码，可以在另一台设备继续这段田园时光。'
-              : modal === 'shop'
+              : modal === 'actions'
+                ? '用宋元通宝收藏双人动作，永久拥有；播放后回到地图，站在一起欣赏。'
+                : modal === 'shop'
                 ? '用收获换来新种子，和更多小伙伴。'
                 : modal === 'house'
                   ? '休息一下，给自己和作物一个慢慢生长的夜晚。'
@@ -1349,8 +1357,41 @@ function Home() {
               </small>
             </div>
           )}
+          {modal === 'actions' && (
+            <div className="shop-content pair-store">
+              <p className="shop-wallet"><Coins size={16} /> {save.coins} 宋元通宝 · 已收藏 {save.pairActions.length}/10</p>
+              <div className="pair-idle-note">
+                <span className="pair-idle-icon"><Heart size={20} strokeWidth={1.5} aria-hidden="true" /></span>
+                <div>
+                  <div className="pair-idle-heading"><strong>相伴的小日常</strong><span>免费待机</span></div>
+                  <p>贴贴、靠肩、互相依偎，安静待在一起就会发生。</p>
+                  <small>收藏的动作，也会在相伴待机时随机播放。</small>
+                </div>
+              </div>
+              {pairActions.map((action, id) => {
+                const owned = save.pairActions.includes(id)
+                return <div className={`shop-row pair-tier-${action.price}`} key={action.name}>
+                  <Heart size={24} />
+                  <span><strong>{action.name}</strong><small>{action.detail}</small><small>{action.price} 系列 · {action.duration * .22} 秒</small></span>
+                  <button disabled={paused || (!owned && save.coins < action.price)} onClick={() => {
+                    if (!owned) {
+                      setSave((s) => s.pairActions.includes(id) || s.coins < action.price ? s : { ...s, coins: s.coins - action.price, pairActions: [...s.pairActions, id] })
+                      setMessage(`已收藏「${action.name}」，可永久播放。`)
+                    } else {
+                      setPairRequest({ id, nonce: Date.now() })
+                      setModal(null)
+                      setMessage(`「${action.name}」已准备好，停止移动，等同伴靠近。`)
+                    }
+                  }}>{owned ? '一起播放' : save.coins < action.price ? `还差 ${action.price - save.coins}` : `${action.price} 购买`}</button>
+                </div>
+              })}
+              <div className="pair-store-footer"><button className="pair-back-button" onClick={() => setModal('shop')}><ArrowLeft size={16} aria-hidden="true" /><span>回到杂货铺</span><ShoppingBasket size={16} aria-hidden="true" /></button></div>
+              <p role="status">{message}</p>
+            </div>
+          )}
           {modal === 'shop' && (
             <div className="shop-content">
+              <button className="action-store-entry" onClick={() => setModal('actions')}><Heart size={18} /> 双人动作商城 · 10 份亲密时光 <ChevronRight size={16} /></button>
               <h4>种子 · 每份 5 颗</h4>
               {crops.map((c, i) => (
                 <div className="shop-row" key={c.name}>
