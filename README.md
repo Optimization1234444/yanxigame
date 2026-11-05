@@ -4,6 +4,17 @@
 
 使用 React 19、TypeScript、TanStack Start、Vite、CSS、手绘 SVG 和 Lucide 图标。浏览器 localStorage 保存离线副本，Service Worker 缓存页面及资源，联网时通过 Netlify Functions 和 Netlify Database（Drizzle）备份进度。平台自动部署数据库迁移。首次联网完整载入后支持离线游玩；浏览器须允许站点存储。设置中可生成、复制、验证并导入 FIELD1 储存码，导入将替换当前进度。
 
+## 项目详情
+
+前端	TanStack Start (SSR) + React 19 + Vite 8	像素风种田游戏，localStorage 离线存档 + Service Worker 离线缓存
+后端	Netlify Function	仅 1 个接口 /api/backup（GET 拉取 / POST 备份存档）
+数据库	Netlify Database + Drizzle ORM	1 张表 farm_backups（id + progress JSON + updatedAt），迁移文件在 netlify/database/migrations/
+
+备份服务挂了游戏照样能玩（前端本地存档兜底），耦合度低
+netlify.toml 已配好：构建命令 vite build，发布目录 dist/client，Node 24
+前端只在 3 处调用 fetch('/api/backup')，改造点很集中
+
+
 ## 本地运行
 
 安装 Node.js 22.13+ 或 24，运行 `pnpm install`，再运行 `netlify dev --port 8889`。访问终端显示的本地地址。Netlify 环境提供数据库连接，纯前端玩法即使备份服务不可用仍可继续。生产构建由 Netlify 自动处理。
