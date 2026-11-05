@@ -1,0 +1,22 @@
+# 第一阶段：构建阶段，基于Node LTS镜像完成依赖安装和生产构建
+FROM node:lts-slim AS builder
+WORKDIR /app
+# 先复制依赖配置文件，最大化复用Docker构建缓存
+COPY package*.json ./
+RUN npm install
+# 复制全部项目源码
+COPY . .
+# 执行Vite生产构建，生成dist静态产物
+RUN npm run build
+
+# 第二阶段：生产运行阶段，使用轻量Node镜像托管静态资源
+FROM node:lts-slim
+WORKDIR /app
+# 从构建阶段仅复制最终的dist静态产物，剔除所有构建阶段的冗余依赖
+COPY --from=builder /app/dist ./dist
+# 全局安装轻量静态服务serve
+RUN npm install -g serve
+# 声明对外暴露的8889端口
+EXPOSE 8889
+# 启动命令，强制监听0.0.0.0:8889，适配集群网络访问规则
+CMD ["serve", "dist", "-l", "8889"]
